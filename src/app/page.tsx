@@ -14,7 +14,7 @@ type Message = {
   kind: "user" | "agent" | "system";
   status?: string;
 };
-type ProviderState = { configured: boolean; provider: string; name: string };
+type ProviderState = { configured: boolean; registered: boolean; enabled: boolean; provider: string; name: string };
 
 const agents = [
   { id: "chatgpt-primary", name: "ChatGPT", role: "OpenAI · Reasoning & analysis", initials: "GPT", enabled: true },
@@ -425,7 +425,7 @@ export default function Home() {
 
           <div className="metrics">
             <div className="card"><div className="metric-label">Initial AI members</div><div className="metric-value">03</div><div className="metric-note">OpenAI · Gemini · DeepSeek</div></div>
-            <div className="card"><div className="metric-label">Configured providers</div><div className="metric-value">{Object.values(providerStates).filter((item) => item.configured).length.toString().padStart(2, "0")}</div><div className="metric-note">Secrets and model IDs required</div></div>
+            <div className="card"><div className="metric-label">Activated providers</div><div className="metric-value">{Object.values(providerStates).filter((item) => item.enabled).length.toString().padStart(2, "0")}</div><div className="metric-note">Secrets and model IDs required</div></div>
             <div className="card"><div className="metric-label">Active conversation</div><div className="metric-value">{conversationId ? "01" : "00"}</div><div className="metric-note">{conversationId ? "Persisted in Development" : "Belum dimulai"}</div></div>
             <div className="card"><div className="metric-label">Workspace access</div><div className="metric-value" style={{fontSize:18}}>{authorizationStatus === "ready" ? "READY" : authorizationStatus === "pending" ? "PENDING" : "CHECK"}</div><div className="metric-note">FM-001 scope enforcement</div></div>
           </div>
@@ -462,7 +462,7 @@ export default function Home() {
                   return <label className="agent-row" key={agent.id} style={{cursor: agent.enabled ? "pointer" : "not-allowed", opacity: agent.enabled ? 1 : 0.48}}>
                     <input type="checkbox" disabled={!agent.enabled} checked={selected.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
                     <div className="agent-icon">{agent.initials}</div><div><div className="agent-name">{agent.name}</div><div className="agent-role">{agent.role}</div></div>
-                    <span className="agent-state">{!agent.enabled ? "LATER" : status?.configured ? "READY" : "SETUP"}</span>
+                    <span className="agent-state">{!agent.enabled ? "LATER" : status?.enabled ? "READY" : status?.configured ? "ACTIVATE" : "SETUP"}</span>
                   </label>;
                 })}</div>
               </div>
@@ -470,7 +470,7 @@ export default function Home() {
                 <div className="chat-title">Connection readiness</div>
                 <div className="field"><label>FM-001 authorization</label><input readOnly value={authorizationStatus === "ready" ? "Authorized" : authorizationStatus === "pending" ? "Principal pending" : "Checking / unavailable"} /></div>
                 <div className="field"><label>Supabase Realtime</label><input readOnly value={conversationId ? "Subscribed to active room" : "Waiting for conversation"} /></div>
-                <div className="field"><label>Provider configuration</label><input readOnly value={Object.values(providerStates).filter((item) => item.configured).length + " / 3 ready"} /></div>
+                <div className="field"><label>Provider configuration</label><input readOnly value={Object.values(providerStates).filter((item) => item.enabled).length + " / 3 active"} /></div>
                 <p className="notice">Provider keys remain in Supabase Edge Function Secrets. Do not paste credentials into the workspace, browser, or GitHub.</p>
               </div>
             </aside>
