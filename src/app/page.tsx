@@ -17,7 +17,7 @@ type Message = {
 type ProviderState = { configured: boolean; registered: boolean; enabled: boolean; provider: string; name: string };
 
 const agents = [
-  { id: "chatgpt-primary", name: "ChatGPT", role: "OpenAI · Reasoning & analysis", initials: "GPT", enabled: true },
+  { id: "chatgpt-primary", name: "Ferguson · ChatGPT", role: "OpenAI API · Strategic coordination", initials: "F", enabled: true },
   { id: "gemini-primary", name: "Gemini", role: "Google · Research & multimodal", initials: "G", enabled: true },
   { id: "deepseek-primary", name: "DeepSeek", role: "DeepSeek · Technical reasoning", initials: "DS", enabled: true },
   { id: "claude-primary", name: "Claude", role: "Anthropic · Planned adapter", initials: "C", enabled: false },
