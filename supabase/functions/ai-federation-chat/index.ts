@@ -317,10 +317,10 @@ Deno.serve(async (req: Request) => {
   if (origin && !allowedOrigins().includes(origin)) return json(403, { status: "origin_not_allowed" });
 
   const authorizationHeader = req.headers.get("authorization") ?? "";
-  const match = authorizationHeader.match(/^Bearer\\s+(.+)$/i);
+  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return json(401, { status: "unauthorized", error: "A valid user session is required." }, cors);
 
-  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\\/+$/, "");
+  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
   const publishableKey = readKeyring(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS"), "SUPABASE_ANON_KEY");
   const secretKey = readKeyring(Deno.env.get("SUPABASE_SECRET_KEYS"), "SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !publishableKey || !secretKey) {
