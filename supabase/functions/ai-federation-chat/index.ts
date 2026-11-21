@@ -171,6 +171,28 @@ async function updateRow(supabaseUrl: string, secretKey: string, tableAndFilter:
   });
 }
 
+async function getRegistryStatus(supabaseUrl: string, secretKey: string) {
+  const rows = await dbRequest(
+    supabaseUrl,
+    secretKey,
+    "rpc/ai_federation_provider_status",
+    {
+      method: "POST",
+      body: JSON.stringify({ p_agent_ids: Object.keys(AGENTS) })
+    }
+  );
+  const status = new Map<string, { agentActive: boolean; connectionActive: boolean }>();
+  if (Array.isArray(rows)) {
+    for (const row of rows as Json[]) {
+      status.set(String(row.agent_id), {
+        agentActive: row.agent_active === true,
+        connectionActive: row.connection_active === true
+      });
+    }
+  }
+  return status;
+}
+
 function providerError(provider: ProviderId, status: number, code?: string) {
   return Object.assign(new Error(`${provider}_provider_error`), {
     status: status === 429 ? 429 : 502,
@@ -359,9 +381,13 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === "status") {
+    const registry = await getRegistryStatus(supabaseUrl, secretKey);
     const providers = (Object.entries(AGENTS) as [AgentId, typeof AGENTS[AgentId]][]).map(([agentId, agent]) => {
       const config = getConfig(agent.provider);
-      return { agentId, name: agent.name, provider: agent.provider, configured: Boolean(config.apiKey && config.model) };
+      const record = registry.get(agentId);
+      const registered = Boolean(record?.agentActive && record?.connectionActive);
+      const configured = Boolean(config.apiKey && config.model);
+      return { agentId, name: agent.name, provider: agent.provider, configured, registered, enabled: configured && registered };
     });
     return json(200, { status: "ready", environment: "development", providers }, cors);
   }
@@ -397,6 +423,19 @@ Deno.serve(async (req: Request) => {
       (mode === "broadcast" && agentIds.length < 2) ||
       (mode === "sequential_review" && agentIds.length !== 2)) {
     return json(400, { status: "invalid_chat_request", error: "Check the message, client message ID, mode, and one-to-three unique supported agents." }, cors);
+  }
+
+  const registry = await getRegistryStatus(supabaseUrl, secretKey);
+  const inactive = (agentIds as AgentId[]).filter((id) => {
+    const record = registry.get(id);
+    return !record?.agentActive || !record?.connectionActive;
+  });
+  if (inactive.length) {
+    return json(409, {
+      status: "agent_not_activated",
+      error: "Selected agents must be activated in the FM-001 Development registry after credential verification.",
+      missingAgents: inactive
+    }, cors);
   }
 
   const missing = (agentIds as AgentId[]).filter((id) => {
