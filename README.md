@@ -83,5 +83,6 @@ Provider credentials belong only in Supabase Edge Function Secrets. Never commit
 - [Local setup](docs/SETUP.md)
 - [Founder account provisioning](docs/FOUNDER-BOOTSTRAP.md)
 - [Provider onboarding](docs/PROVIDER-ONBOARDING.md)
+- [Vercel deployment runbook](docs/VERCEL-DEPLOYMENT.md)
 - [Security policy](SECURITY.md)
 - [Contribution guide](CONTRIBUTING.md)
