@@ -14,16 +14,33 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
       - name: Type check
         run: npm run typecheck
       - name: Unit tests
         run: npm test
       - name: Lint
         run: npm run lint
+      - name: Build
+        run: npm run build
+
+  edge-function:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type check Supabase Edge Function
+        run: deno check supabase/functions/ai-federation-chat/index.ts
