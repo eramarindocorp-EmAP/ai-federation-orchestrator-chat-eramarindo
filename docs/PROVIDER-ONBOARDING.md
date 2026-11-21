@@ -7,7 +7,7 @@ The `ai-federation-chat` Supabase Edge Function has server-side adapters for:
 | Federation agent | Provider API | Required secrets |
 |---|---|---|
 | `chatgpt-primary` | OpenAI Responses API | `OPENAI_API_KEY`, `OPENAI_MODEL` |
-| `gemini-primary` | Google Gemini generateContent | `GEMINI_API_KEY`, `GEMINI_MODEL` |
+| `gemini-primary` | Google Gemini Interactions API | `GEMINI_API_KEY`, `GEMINI_MODEL` |
 | `deepseek-primary` | DeepSeek Chat Completions | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` |
 
 Claude, Microsoft Copilot, and GitHub Copilot remain future integrations. They are not selectable in the first release.
