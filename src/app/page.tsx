@@ -64,6 +64,7 @@ export default function Home() {
     () => agents.filter((agent) => selected.includes(agent.id)).map((agent) => agent.name),
     [selected]
   );
+  const selectedReady = selected.length > 0 && selected.every((id) => providerStates[id]?.enabled === true);
 
   useEffect(() => {
     if (!supabase) {
@@ -263,6 +264,17 @@ export default function Home() {
       }]);
       return;
     }
+    if (!selectedReady) {
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(),
+        sender: "FERGUSON · PROVIDER CONTROL",
+        text: "Model yang dipilih belum aktif. Lengkapi API key dan model ID, lakukan pengujian, lalu aktifkan agent dan REST connection di FM-001 Development.",
+        time: timeLabel(),
+        kind: "system",
+        status: "agent_not_activated"
+      }]);
+      return;
+    }
     if (mode === "direct" && selected.length !== 1) {
       setMessages((current) => [...current, {
         id: crypto.randomUUID(), sender: "FEDERATION SYSTEM",
@@ -448,9 +460,10 @@ export default function Home() {
                     <option value="broadcast">Broadcast · paralel</option>
                     <option value="sequential_review">Sequential review · berantai</option>
                   </select>
-                  <button className="primary-btn" onClick={() => void sendMessage()} disabled={!draft.trim() || busy || authorizationStatus !== "ready"}>Kirim ke Federation ↗</button>
+                  <button className="primary-btn" onClick={() => void sendMessage()} disabled={!draft.trim() || busy || authorizationStatus !== "ready" || !selectedReady}>Kirim ke Federation ↗</button>
                 </div>
                 {authorizationStatus === "pending" && <p className="notice">Akun sudah masuk, tetapi principal dan scope FM-001 belum diberikan oleh administrator. Chat belum diaktifkan.</p>}
+                {authorizationStatus === "ready" && !selectedReady && <p className="notice">Model yang dipilih belum aktif. Lengkapi API key dan model ID, uji koneksi, lalu aktifkan agent serta REST connection di FM-001 Development.</p>}
               </div>
             </section>
 

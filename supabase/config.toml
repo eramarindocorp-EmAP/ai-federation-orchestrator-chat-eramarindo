@@ -1,0 +1,4 @@
+project_id = "rlpkhatlemuhmmzeuzqf"
+
+[functions.ai-federation-chat]
+verify_jwt = true
