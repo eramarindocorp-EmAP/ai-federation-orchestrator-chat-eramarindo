@@ -1,3 +1,5 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+
 // ERAMARINDO AI FEDERATION — server-side multi-provider chat.
  // Requires Supabase Edge Function verify_jwt=true.
  // Human authorization is delegated to the existing FM-001 gateway.
@@ -194,7 +196,7 @@ async function invokeProvider(provider: ProviderId, messages: ChatMessage[], sys
   if (!config.apiKey || !config.model) {
     throw Object.assign(new Error("provider_not_configured"), { status: 503, code: "provider_not_configured" });
   }
-  const signal = AbortSignal.timeout(35_000);
+  const signal = AbortSignal.timeout(20_000);
 
   if (provider === "openai") {
     const input = messages.map((message) => ({
@@ -300,6 +302,7 @@ function safeAgentId(value: unknown): value is AgentId {
 function errorCode(error: unknown) {
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string") return error.code;
   if (error instanceof Error && error.message === "provider_not_configured") return "provider_not_configured";
+  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) return "provider_timeout";
   return "provider_request_failed";
 }
 
@@ -391,7 +394,8 @@ Deno.serve(async (req: Request) => {
       agentIds.some((id) => !safeAgentId(id)) ||
       new Set(agentIds).size !== agentIds.length ||
       (mode === "direct" && agentIds.length !== 1) ||
-      (mode !== "direct" && agentIds.length < 2)) {
+      (mode === "broadcast" && agentIds.length < 2) ||
+      (mode === "sequential_review" && agentIds.length !== 2)) {
     return json(400, { status: "invalid_chat_request", error: "Check the message, client message ID, mode, and one-to-three unique supported agents." }, cors);
   }
 
@@ -405,6 +409,15 @@ Deno.serve(async (req: Request) => {
       error: "One or more selected providers are not configured in Supabase Function Secrets.",
       missingAgents: missing
     }, cors);
+  }
+
+  const rateLimitSince = new Date(Date.now() - 60_000).toISOString();
+  const recentRuns = await dbRequest(
+    supabaseUrl, secretKey,
+    `ai_federation_runs?requested_by=eq.${encodeURIComponent(user.id)}&created_at=gte.${encodeURIComponent(rateLimitSince)}&select=run_id&limit=6`
+  );
+  if (Array.isArray(recentRuns) && recentRuns.length >= 5) {
+    return json(429, { status: "rate_limited", error: "Maximum five chat runs per minute. Please wait before sending another request." }, cors);
   }
 
   let conversationId = conversationIdInput;
