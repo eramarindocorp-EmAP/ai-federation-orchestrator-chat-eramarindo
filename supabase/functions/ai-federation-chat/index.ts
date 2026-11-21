@@ -239,7 +239,7 @@ async function invokeProvider(provider: ProviderId, messages: ChatMessage[], sys
   if (provider === "openai") {
     const input = messages.map((message) => ({
       role: message.role,
-      content: [{ type: "input_text", text: message.content }]
+      content: message.content
     }));
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -299,36 +299,41 @@ async function invokeProvider(provider: ProviderId, messages: ChatMessage[], sys
     };
   }
 
-  const contents = messages.map((message) => ({
-    role: message.role === "assistant" ? "model" : "user",
-    parts: [{ text: message.content }]
-  }));
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent`;
-  const response = await fetch(endpoint, {
+  const transcript = messages.map((message) =>
+    `${message.role === "user" ? "User" : "Assistant"}:\n${message.content}`
+  ).join("\n\n");
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
     headers: { "x-goog-api-key": config.apiKey, "content-type": "application/json" },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents,
-      generationConfig: { maxOutputTokens: 1600, temperature: 0.2 }
+      model: config.model,
+      input: transcript,
+      system_instruction: systemPrompt,
+      store: false,
+      stream: false,
+      generation_config: { max_output_tokens: 1600, thinking_level: "low" }
     }),
     signal
   });
   const data = await readProviderJson(response, provider);
-  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
-  const parts = candidates[0]?.content?.parts;
-  const content = Array.isArray(parts)
-    ? parts.map((part: Json) => typeof part.text === "string" ? part.text : "").join("")
-    : "";
+  if (data.status === "incomplete" || data.status === "failed") {
+    throw providerError(provider, 502, String(data.status));
+  }
+  const steps = Array.isArray(data.steps) ? data.steps : [];
+  const content = steps
+    .filter((step: Json) => step.type === "model_output")
+    .flatMap((step: Json) => Array.isArray(step.content) ? step.content : [])
+    .filter((part: Json) => part.type === "text")
+    .map((part: Json) => typeof part.text === "string" ? part.text : "")
+    .join("\n");
   if (!content.trim()) throw providerError(provider, 502, "empty_output");
-  const usage = data.usageMetadata && typeof data.usageMetadata === "object"
-    ? data.usageMetadata as Json : {};
+  const usage = data.usage && typeof data.usage === "object" ? data.usage as Json : {};
   return {
     content,
-    model: config.model,
+    model: String(data.model ?? config.model),
     usage: {
-      input_tokens: Number(usage.promptTokenCount ?? 0) || null,
-      output_tokens: Number(usage.candidatesTokenCount ?? 0) || null
+      input_tokens: Number(usage.total_input_tokens ?? 0) || null,
+      output_tokens: Number(usage.total_output_tokens ?? 0) || null
     }
   };
 }
