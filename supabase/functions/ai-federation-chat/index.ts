@@ -1,7 +1,7 @@
 // ERAMARINDO AI FEDERATION — server-side multi-provider chat.
-// Requires Supabase Edge Function verify_jwt=true.
-// Human authorization is delegated to the existing FM-001 gateway.
-// Provider credentials remain in Supabase Function Secrets only.
+ // Requires Supabase Edge Function verify_jwt=true.
+ // Human authorization is delegated to the existing FM-001 gateway.
+ // Provider credentials remain in Supabase Function Secrets only.
 
 type Json = Record<string, unknown>;
 type ProviderId = "openai" | "gemini" | "deepseek";
@@ -314,10 +314,10 @@ Deno.serve(async (req: Request) => {
   if (origin && !allowedOrigins().includes(origin)) return json(403, { status: "origin_not_allowed" });
 
   const authorizationHeader = req.headers.get("authorization") ?? "";
-  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
+  const match = authorizationHeader.match(/^Bearer\\s+(.+)$/i);
   if (!match) return json(401, { status: "unauthorized", error: "A valid user session is required." }, cors);
 
-  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
+  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\\/+$/, "");
   const publishableKey = readKeyring(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS"), "SUPABASE_ANON_KEY");
   const secretKey = readKeyring(Deno.env.get("SUPABASE_SECRET_KEYS"), "SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !publishableKey || !secretKey) {
@@ -379,18 +379,20 @@ Deno.serve(async (req: Request) => {
   }
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
+  const clientMessageId = typeof body.clientMessageId === "string" ? body.clientMessageId : "";
   const mode = body.mode as Mode;
   const agentIds = Array.isArray(body.agentIds) ? body.agentIds : [];
   const conversationIdInput = typeof body.conversationId === "string" ? body.conversationId : null;
 
-  if (!message || message.length > 12_000 ||
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientMessageId) ||
+      !message || message.length > 12_000 ||
       !["direct", "broadcast", "sequential_review"].includes(mode) ||
       agentIds.length < 1 || agentIds.length > 3 ||
       agentIds.some((id) => !safeAgentId(id)) ||
       new Set(agentIds).size !== agentIds.length ||
       (mode === "direct" && agentIds.length !== 1) ||
       (mode !== "direct" && agentIds.length < 2)) {
-    return json(400, { status: "invalid_chat_request", error: "Check the message, mode, and one-to-three unique supported agents." }, cors);
+    return json(400, { status: "invalid_chat_request", error: "Check the message, client message ID, mode, and one-to-three unique supported agents." }, cors);
   }
 
   const missing = (agentIds as AgentId[]).filter((id) => {
@@ -438,6 +440,7 @@ Deno.serve(async (req: Request) => {
   const runId = String(run.run_id);
 
   const userMessage = await insertRow(supabaseUrl, secretKey, "ai_federation_messages", {
+    message_id: clientMessageId,
     conversation_id: conversationId,
     run_id: runId,
     sender_type: "human",
