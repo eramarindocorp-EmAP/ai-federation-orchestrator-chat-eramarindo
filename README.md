@@ -3,82 +3,84 @@
 > ONE GATE — ONE STANDARD — ONE COMMAND  
 > ONE TEAM — MULTIPLE INTELLIGENCES — ONE COLLECTIVE MISSION
 
-A centralized, human-governed multi-model workspace for routing tasks, coordinating AI-to-AI exchanges, and preserving approved shared knowledge.
+A human-governed multi-model workspace for orchestrating ChatGPT, Gemini, and DeepSeek through the existing Eramarindo FM-001 authorization gateway.
 
-## Project status
+## Current implementation status
 
-**Bootstrap / architecture phase.** This repository was verified as accessible, public, and empty before initialization. No provider integrations, running deployment, or live model-to-model chat are claimed at this stage.
+**Development foundation implemented; provider activation and web deployment remain pending.**
 
-## Objectives
+- Next.js/TypeScript Federation workspace with Supabase Auth sign-in/sign-up.
+- Chat API proxy to a Supabase Edge Function.
+- Supabase Edge Function `ai-federation-chat` deployed to the Development project with JWT verification enabled.
+- Existing `fm001-gateway` used for principal and scope authorization.
+- Owner-scoped conversation/message/run tables with RLS and Realtime publication.
+- Service-role-only RPC enforces Development agent and connection activation status.
+- Provider adapters implemented for OpenAI Responses API, Gemini generateContent, and DeepSeek Chat Completions.
+- Direct, parallel broadcast, and two-agent sequential review modes.
+- No provider credentials have been added and no live provider call has been verified.
+- No Vercel project or web deployment has been created.
 
-- Provide one workspace for human-to-AI and orchestrated AI-to-AI conversations.
-- Connect model providers through explicit, separately configured API credentials.
-- Support direct, broadcast, sequential-review, and parallel-task orchestration patterns.
-- Persist conversation events and approved knowledge with tenant and role boundaries.
-- Add traceability, budgets, rate limits, redaction, and human approval gates.
+The app intentionally fails closed until a human principal is provisioned, provider API secrets/model IDs are configured, and the corresponding FM-001 agent records are activated.
 
-## Proposed v1 stack
+## Architecture
 
-| Layer | Proposed technology | Responsibility |
-|---|---|---|
-| Web application | Next.js / React | Federation chat and administration UI |
-| Orchestrator API | Node.js / TypeScript | Routing, runs, tool policy, provider adapters |
-| Realtime | Supabase Realtime (or WebSocket gateway) | Live conversation updates |
-| Database | Supabase PostgreSQL | Users, rooms, agents, messages, runs, audit events |
-| Deployment | Vercel for web/API where suitable | Application hosting |
-| Source control / CI | GitHub Actions | Checks, tests, deployment workflow |
+| Layer | Implementation |
+|---|---|
+| Web UI | Next.js / React / TypeScript |
+| Human identity | Supabase Auth |
+| Authorization | Existing FM-001 `fm001-gateway` |
+| Orchestration | Supabase Edge Function `ai-federation-chat` |
+| Chat persistence | Supabase PostgreSQL |
+| Live transcript updates | Supabase Realtime |
+| Provider adapters | OpenAI, Gemini, DeepSeek |
+| CI | GitHub Actions: Node checks and Deno type check |
+| Planned hosting | Vercel (project creation permission required) |
 
-The stack is a proposal, not a claim that services have already been provisioned.
+## Conversation modes
 
-## Initial architecture
-
-1. **Human user** creates a room or task and selects participating agents.
-2. **Orchestrator** validates permissions, policy, budget, and requested execution mode.
-3. **Provider adapters** call each configured provider using server-side credentials.
-4. **Message/event layer** records requests, responses, errors, and execution status.
-5. **Workspace** streams events to authorized participants.
-6. **Knowledge workflow** promotes only reviewed, approved outputs into shared knowledge.
-
-AI models do not share hidden internal state. Each provider call receives only the context intentionally assembled and authorized by the orchestrator.
-
-## v1 conversation modes
-
-- **Direct:** one user message to one selected model.
-- **Broadcast:** same prompt sent to several selected models.
-- **Sequential review:** output from one model is passed to the next reviewer.
-- **Parallel tasks:** specialized agents work concurrently; the orchestrator collects results.
-- **Facilitated room:** orchestrator manages turns and prevents uncontrolled agent-to-agent loops.
-
-## Security requirements
-
-- Never commit API keys, access tokens, database passwords, or production secrets.
-- Store provider credentials only in managed server-side environment variables or a secrets manager.
-- Enforce authentication, room membership, role-based authorization, and server-side provider calls.
-- Apply per-user/provider rate limits, usage budgets, request timeouts, and retry limits.
-- Treat model outputs and retrieved documents as untrusted input; do not allow them to override system policy.
-- Require explicit human approval for external side effects and consequential actions.
-- Log actor, model/provider, request ID, timestamps, token/usage metadata when available, and approval status.
-- Provide deletion/retention controls and avoid storing sensitive data unless necessary.
-
-## Provider onboarding
-
-Each provider must be integrated and tested independently. A consumer chat subscription does not automatically include API access. Required credentials, endpoints, model identifiers, terms, and pricing must be verified for each provider before activation.
-
-Initial candidates: OpenAI, Google Gemini, DeepSeek, Anthropic Claude. Microsoft Copilot and GitHub Copilot require product-specific integration review; do not assume they expose the same generic chat API as model providers.
-
-## Planned implementation milestones
-
-1. Repository bootstrap, architecture decisions, linting, tests, and secret handling.
-2. Authentication, users, rooms, messages, and event persistence.
-3. Provider adapter contract and first provider integration.
-4. Realtime group chat and controlled orchestration modes.
-5. Additional provider integrations and capability registry.
-6. Evaluation, audit, usage controls, and deployment hardening.
+- **Direct:** one selected provider receives the message.
+- **Broadcast:** two or three selected providers answer in parallel.
+- **Sequential review:** exactly two selected providers; the second reviews the first response.
+- Every run is bounded by provider timeouts, output limits, and a per-user request guard.
 
 ## Local development
 
-Detailed setup instructions will be added as implementation files land. Do not deploy this project until required environment variables, authentication, database policies, and provider integrations have been configured and tested.
+See [docs/SETUP.md](docs/SETUP.md).
 
-## Governance
+Required browser-safe variables:
 
-The human executive owner retains control over provider credentials, data access, budgets, deployment, and consequential actions. Ferguson is a conversational coordination role; it is not an autonomous credential holder or a persistent process outside the applications and tools explicitly connected to this system.
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+
+Provider credentials belong only in Supabase Edge Function Secrets. Never commit secrets or expose them through `NEXT_PUBLIC_*` variables.
+
+## Required activation steps
+
+1. Create a permanent Supabase Auth account.
+2. Provision its FM-001 Development principal and `chat:read` / `chat:write` scopes using [docs/FOUNDER-BOOTSTRAP.md](docs/FOUNDER-BOOTSTRAP.md).
+3. Configure provider keys and exact model IDs using [docs/PROVIDER-ONBOARDING.md](docs/PROVIDER-ONBOARDING.md).
+4. Test each provider with non-sensitive prompts and approved spending limits.
+5. Activate the matching Development agent and REST connection records.
+6. Configure the Vercel project and browser-safe Supabase environment variables.
+7. Pass CI, security review, and an end-to-end test before enabling Production.
+
+## Security and governance
+
+- Provider calls execute server-side only.
+- The existing FM-001 gateway remains the authorization authority.
+- Chat records are owner-scoped; anonymous Auth sessions are explicitly excluded from reads.
+- Client roles cannot insert, update, or delete chat records directly.
+- Provider secrets are never stored in chat messages or database metadata.
+- Model output and user-provided content are untrusted input.
+- Production access and external side effects require separate approval.
+
+## Project documents
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Messaging protocol](docs/PROTOCOL.md)
+- [Implementation roadmap](docs/ROADMAP.md)
+- [Local setup](docs/SETUP.md)
+- [Founder account provisioning](docs/FOUNDER-BOOTSTRAP.md)
+- [Provider onboarding](docs/PROVIDER-ONBOARDING.md)
+- [Security policy](SECURITY.md)
+- [Contribution guide](CONTRIBUTING.md)
