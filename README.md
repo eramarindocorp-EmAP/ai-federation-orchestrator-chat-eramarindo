@@ -3,7 +3,7 @@
 > ONE GATE — ONE STANDARD — ONE COMMAND  
 > ONE TEAM — MULTIPLE INTELLIGENCES — ONE COLLECTIVE MISSION
 
-A human-governed multi-model workspace for orchestrating ChatGPT, Gemini, and DeepSeek through the existing Eramarindo FM-001 authorization gateway.
+A human-governed multi-model workspace for orchestrating the Ferguson (OpenAI API), Gemini, and DeepSeek agents through the existing Eramarindo FM-001 authorization gateway.
 
 ## Current implementation status
 
@@ -12,6 +12,7 @@ A human-governed multi-model workspace for orchestrating ChatGPT, Gemini, and De
 - Next.js/TypeScript Federation workspace with Supabase Auth sign-in/sign-up.
 - Chat API proxy to a Supabase Edge Function.
 - Supabase Edge Function `ai-federation-chat` deployed to the Development project with JWT verification enabled.
+- The OpenAI-backed Ferguson agent has a dedicated strategic-coordinator role prompt; it is an API agent, separate from the current ChatGPT application session.
 - Existing `fm001-gateway` used for principal and scope authorization.
 - Owner-scoped conversation/message/run tables with RLS and Realtime publication.
 - Service-role-only RPC enforces Development agent and connection activation status.
