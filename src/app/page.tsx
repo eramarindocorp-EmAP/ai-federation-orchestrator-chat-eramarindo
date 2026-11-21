@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -163,7 +164,7 @@ export default function Home() {
           status: String(item.status ?? "")
         };
       });
-      setMessages(loaded.length ? loaded : messages);
+      if (loaded.length) setMessages(loaded);
     }).catch(() => undefined);
 
     return () => { active = false; };
@@ -205,7 +206,7 @@ export default function Home() {
     return () => { void supabase.removeChannel(channel); };
   }, [supabase, session, conversationId]);
 
-  async function submitAuth(event: React.FormEvent<HTMLFormElement>) {
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase) return;
     setAuthError("");
