@@ -1,5 +1,3 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-
 // ERAMARINDO AI FEDERATION — server-side multi-provider chat.
  // Requires Supabase Edge Function verify_jwt=true.
  // Human authorization is delegated to the existing FM-001 gateway.
