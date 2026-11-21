@@ -2,44 +2,55 @@
 
 ## Prerequisites
 
-- Node.js 22 or a version supported by the chosen Next.js release.
-- npm.
-- A Supabase project for authentication and persistence (not required to view the static shell).
-- Provider API access for each model that will be activated.
+- Node.js 22 and npm.
+- Supabase Development project.
+- A permanent Supabase Auth account for each human operator.
+- API access and separately billed credentials for each provider that will be activated.
+
+## Application environment
+
+Copy `.env.example` to `.env.local` and set:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+
+The publishable key is safe for browser use. Never put a Supabase secret/service-role key or provider API key in a `NEXT_PUBLIC_*` variable.
 
 ## Run locally
 
-1. Clone this repository and check out `feat/federation-foundation`.
+1. Clone the repository and check out `feat/live-ai-federation-chat` while it is under review.
 2. Run `npm install`.
-3. Copy `.env.example` to `.env.local`.
-4. Leave secrets empty until accounts and project environments are provisioned.
-5. Run `npm run dev`.
-6. Open `http://localhost:3000`.
+3. Copy `.env.example` to `.env.local` and configure the two public Supabase values.
+4. Run `npm run dev`.
+5. Open `http://localhost:3000`.
+6. Register or sign in with a permanent Supabase Auth account.
+7. Have an administrator provision the user as an FM-001 Development principal using `docs/FOUNDER-BOOTSTRAP.md`.
 
-The chat shell is a foundation UI. The API endpoint currently returns `not_configured` (HTTP 501) intentionally; it does not send prompts to any external model.
+The chat UI authenticates users through Supabase Auth. All chat requests pass through the existing FM-001 authorization gateway before provider calls are permitted.
 
-## Supabase
+## Supabase database
 
-1. Provision a dedicated development project.
-2. Review `supabase/migrations/0001_federation_core.sql`.
-3. Apply the migration only after reviewing RLS with a database administrator.
-4. Configure Supabase URL and public anon key in the application environment.
-5. Configure the service role key only as a server-side secret. Never expose it with a `NEXT_PUBLIC_` prefix.
-6. Test access using separate owner, member, and non-member accounts before enabling any room features.
+The Development project already contains the FM-001 `federation` schema and the existing gateway foundation. The AI Federation migration adds owner-scoped chat persistence in the public schema, registers Gemini/DeepSeek as pending Development agents, and creates a service-role-only registry-status RPC.
 
-## Provider onboarding
+The current Development project has received the initial chat schema, anonymous-user RLS hardening, and registry-status RPC. Review and apply any future migration in Development before Production.
 
-For each provider:
-1. Confirm the official API product, data handling terms, allowed data classification, model ID, rate limits, and pricing.
-2. Create a dedicated project/service credential with least privilege.
-3. Store the key in Vercel or another secrets manager; do not put it in GitHub.
-4. Implement and test a provider adapter on the server.
-5. Set per-request timeout, output limit, retry policy, rate limit, and cost ceiling.
-6. Run a synthetic test with non-sensitive content.
-7. Enable the agent only after owner approval.
+## Edge Function
 
-Consumer chatbot subscriptions are not equivalent to API access. Microsoft Copilot and GitHub Copilot require product-specific capability and licensing review rather than assumed generic chat endpoints.
+The server-side chat adapter is `supabase/functions/ai-federation-chat/index.ts`. It is deployed to the Development project with JWT verification enabled. It delegates identity and scope checks to the existing `fm001-gateway`; it does not replace or weaken that gateway.
+
+The function checks both provider credentials/model IDs and FM-001 agent/connection activation state before sending prompts to a provider.
+
+Configure provider secrets in **Supabase Dashboard → Edge Functions → Secrets** as described in `docs/PROVIDER-ONBOARDING.md`. Keep all provider credentials out of GitHub and Vercel public environment variables.
+
+## Access provisioning
+
+Supabase Auth registration does not grant FM-001 privileges automatically. An administrator must create an active `federation.principals` record and a Development role binding with `chat:read` and `chat:write`. See `docs/FOUNDER-BOOTSTRAP.md`.
 
 ## Production gate
 
-Do not deploy as a production chat service until authentication, room-level authorization, database policies, provider adapters, spend controls, logging redaction, deletion/retention and recovery tests are complete.
+Do not enable Production until:
+- Security and performance advisors are reviewed.
+- Human principals and provider connections are provisioned and tested.
+- Provider terms, model IDs, costs, and data classifications are approved.
+- Rate limits, budgets, retention, deletion, monitoring, and backup/restore are tested.
+- The Vercel project and deployment permissions are approved.
