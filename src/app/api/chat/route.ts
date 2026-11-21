@@ -9,6 +9,7 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("history"), conversationId: z.string().uuid() }),
   z.object({
     action: z.literal("chat"),
+    clientMessageId: z.string().uuid(),
     message: z.string().trim().min(1).max(12000),
     mode: z.enum(["direct", "broadcast", "sequential_review"]),
     agentIds: z.array(z.enum(["chatgpt-primary", "gemini-primary", "deepseek-primary"])).min(1).max(3),
@@ -18,7 +19,7 @@ const requestSchema = z.discriminatedUnion("action", [
 
 export async function POST(request: Request) {
   const authorization = request.headers.get("authorization");
-  if (!authorization || !/^Bearer\\s+\\S+/i.test(authorization)) {
+  if (!authorization || !/^Bearer\s+\S+/i.test(authorization)) {
     return NextResponse.json({ status: "unauthorized", error: "Sign in is required." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 55_000);
   try {
-    const upstream = await fetch(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/ai-federation-chat`, {
+    const upstream = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/ai-federation-chat`, {
       method: "POST",
       headers: { "content-type": "application/json", apikey: publishableKey, authorization },
       body: JSON.stringify(parsed.data),
