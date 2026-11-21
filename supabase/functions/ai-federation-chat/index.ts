@@ -3,6 +3,8 @@
  // Human authorization is delegated to the existing FM-001 gateway.
  // Provider credentials remain in Supabase Function Secrets only.
 
+import { classifyFederationTask } from "../../../src/lib/federation/task-classifier.ts";
+
 type Json = Record<string, unknown>;
 type ProviderId = "openai" | "gemini" | "deepseek";
 type AgentId = "chatgpt-primary" | "gemini-primary" | "deepseek-primary";
@@ -433,6 +435,7 @@ Deno.serve(async (req: Request) => {
   const mode = body.mode as Mode;
   const agentIds = Array.isArray(body.agentIds) ? body.agentIds : [];
   const conversationIdInput = typeof body.conversationId === "string" ? body.conversationId : null;
+  const taskClassification = classifyFederationTask(message);
 
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientMessageId) ||
       !message || message.length > 12_000 ||
@@ -519,7 +522,7 @@ Deno.serve(async (req: Request) => {
     sender_type: "human",
     sender_id: user.id,
     content: message,
-    metadata: { mode, agent_ids: agentIds }
+    metadata: { mode, agent_ids: agentIds, task_classification: taskClassification }
   });
 
   const baseMessages: ChatMessage[] = [...history, { role: "user", content: message }];
