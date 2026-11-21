@@ -264,6 +264,17 @@ export default function Home() {
       }]);
       return;
     }
+    if (!selectedReady) {
+      setMessages((current) => [...current, {
+        id: crypto.randomUUID(),
+        sender: "FERGUSON · PROVIDER CONTROL",
+        text: "Model yang dipilih belum aktif. Lengkapi API key dan model ID, lakukan pengujian, lalu aktifkan agent dan REST connection di FM-001 Development.",
+        time: timeLabel(),
+        kind: "system",
+        status: "agent_not_activated"
+      }]);
+      return;
+    }
     if (mode === "direct" && selected.length !== 1) {
       setMessages((current) => [...current, {
         id: crypto.randomUUID(), sender: "FEDERATION SYSTEM",
