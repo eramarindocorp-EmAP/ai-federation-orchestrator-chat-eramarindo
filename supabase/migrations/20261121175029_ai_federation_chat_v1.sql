@@ -186,7 +186,7 @@ select v.agent_id, 'development', 'rest', v.endpoint_label, 'pending',
        array['chat:generate']::text[], v.secret_reference
 from (values
   ('chatgpt-primary','OpenAI Responses API','OPENAI_API_KEY'),
-  ('gemini-primary','Google Gemini GenerateContent API','GEMINI_API_KEY'),
+  ('gemini-primary','Google Gemini Interactions API','GEMINI_API_KEY'),
   ('deepseek-primary','DeepSeek Chat Completions API','DEEPSEEK_API_KEY')
 ) as v(agent_id, endpoint_label, secret_reference)
 where not exists (
