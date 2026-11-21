@@ -1,9 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
-import type { Session } from "@supabase/supabase-js";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useMemo, useState } from "react";
 
 type Mode = "direct" | "broadcast" | "sequential_review";
 type Message = {
@@ -11,472 +8,177 @@ type Message = {
   sender: string;
   text: string;
   time: string;
-  kind: "user" | "agent" | "system";
+  kind: "user" | "system";
   status?: string;
 };
-type ProviderState = { configured: boolean; registered: boolean; enabled: boolean; provider: string; name: string };
 
 const agents = [
-  { id: "chatgpt-primary", name: "Ferguson · ChatGPT", role: "OpenAI API · Strategic coordination", initials: "F", enabled: true },
-  { id: "gemini-primary", name: "Gemini", role: "Google · Research & multimodal", initials: "G", enabled: true },
-  { id: "deepseek-primary", name: "DeepSeek", role: "DeepSeek · Technical reasoning", initials: "DS", enabled: true },
-  { id: "claude-primary", name: "Claude", role: "Anthropic · Planned adapter", initials: "C", enabled: false },
-  { id: "microsoft-copilot", name: "Microsoft Copilot", role: "Microsoft · Product integration review", initials: "M", enabled: false },
-  { id: "github-copilot", name: "GitHub Copilot", role: "GitHub · Product integration review", initials: "GH", enabled: false }
-] as const;
+  { id: "openai", name: "ChatGPT", role: "Reasoning & analysis", initials: "GPT" },
+  { id: "gemini", name: "Gemini", role: "Research & multimodal", initials: "G" },
+  { id: "deepseek", name: "DeepSeek", role: "Technical reasoning", initials: "DS" },
+  { id: "anthropic", name: "Claude", role: "Document analysis", initials: "C" },
+  { id: "microsoft", name: "Microsoft Copilot", role: "Enterprise productivity", initials: "M" },
+  { id: "github", name: "GitHub Copilot", role: "Software engineering", initials: "GH" }
+];
 
-const agentNames: Record<string, string> = Object.fromEntries(agents.map((agent) => [agent.id, agent.name]));
-const STORAGE_KEY = "eramarindo-ai-federation-active-conversation";
-
-function timeLabel(value?: string) {
-  if (!value) return new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-  return new Date(value).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-}
+const initialMessages: Message[] = [
+  {
+    id: "welcome",
+    sender: "FEDERATION SYSTEM",
+    text: "Selamat datang di ERAMARINDO AI FEDERATION. Workspace ini adalah fondasi awal. Belum ada provider AI yang dikonfigurasi, sehingga pesan yang dikirim belum diteruskan ke model eksternal.",
+    time: "SYSTEM",
+    kind: "system"
+  },
+  {
+    id: "guide",
+    sender: "FERGUSON · COORDINATION",
+    text: "Mulai dengan menulis agenda atau pertanyaan. Pilih mode Direct atau Broadcast. Setelah API provider dan autentikasi backend dikonfigurasi, orchestrator akan meneruskan pesan kepada model yang dipilih.",
+    time: "SYSTEM",
+    kind: "system"
+  }
+];
 
 export default function Home() {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
-  const [session, setSession] = useState<Session | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [authMessage, setAuthMessage] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      sender: "FEDERATION SYSTEM",
-      text: "Selamat datang di ERAMARINDO AI FEDERATION. Silakan masuk menggunakan akun Development yang terdaftar. Seluruh komunikasi model dijalankan melalui FM-001 authorization gateway.",
-      time: "SYSTEM",
-      kind: "system"
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
-  const [mode, setMode] = useState<Mode>("broadcast");
-  const [selected, setSelected] = useState<string[]>(["chatgpt-primary", "gemini-primary", "deepseek-primary"]);
+  const [mode, setMode] = useState<Mode>("direct");
+  const [selected, setSelected] = useState<string[]>(["openai", "gemini", "deepseek"]);
   const [busy, setBusy] = useState(false);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
-  const [authorizationStatus, setAuthorizationStatus] = useState<"checking" | "ready" | "pending" | "unavailable">("checking");
-  const [workspaceStatus, setWorkspaceStatus] = useState("Menunggu autentikasi");
-
-  const selectedNames = useMemo(
-    () => agents.filter((agent) => selected.includes(agent.id)).map((agent) => agent.name),
-    [selected]
-  );
-
-  useEffect(() => {
-    if (!supabase) {
-      setAuthLoading(false);
-      return;
-    }
-    let active = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (active) {
-        setSession(data.session);
-        setAuthLoading(false);
-      }
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setAuthError("");
-      setAuthMessage("");
-    });
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, [supabase]);
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved) setConversationId(saved);
-  }, []);
-
-  const callApi = useCallback(async (body: Record<string, unknown>) => {
-    if (!session?.access_token) throw new Error("Session tidak tersedia. Silakan masuk kembali.");
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${session.access_token}`
-      },
-      body: JSON.stringify(body),
-      cache: "no-store"
-    });
-    const data = await response.json().catch(() => ({}));
-    return { response, data };
-  }, [session]);
-
-  useEffect(() => {
-    if (!session) {
-      setAuthorizationStatus("checking");
-      setWorkspaceStatus("Menunggu autentikasi");
-      setProviderStates({});
-      return;
-    }
-    let active = true;
-    setWorkspaceStatus("Memeriksa otorisasi FM-001…");
-    callApi({ action: "status" }).then(({ response, data }) => {
-      if (!active) return;
-      if (response.status === 403 || data.status === "authorization_pending") {
-        setAuthorizationStatus("pending");
-        setWorkspaceStatus("Akun menunggu provisioning principal");
-        return;
-      }
-      if (!response.ok) {
-        setAuthorizationStatus("unavailable");
-        setWorkspaceStatus("Layanan belum siap");
-        return;
-      }
-      const next: Record<string, ProviderState> = {};
-      for (const item of Array.isArray(data.providers) ? data.providers : []) {
-        next[item.agentId] = item as ProviderState;
-      }
-      setProviderStates(next);
-      setAuthorizationStatus("ready");
-      setWorkspaceStatus("FM-001 authorized · Development");
-    }).catch(() => {
-      if (active) {
-        setAuthorizationStatus("unavailable");
-        setWorkspaceStatus("Gateway tidak dapat dijangkau");
-      }
-    });
-    return () => { active = false; };
-  }, [session, callApi]);
-
-  useEffect(() => {
-    if (!supabase || !session || !conversationId) return;
-    window.localStorage.setItem(STORAGE_KEY, conversationId);
-    let active = true;
-
-    callApi({ action: "history", conversationId }).then(({ response, data }) => {
-      if (!active || !response.ok || !Array.isArray(data.messages)) return;
-      const loaded: Message[] = data.messages.map((item: Record<string, unknown>) => {
-        const senderType = String(item.sender_type ?? "system");
-        const senderId = String(item.sender_id ?? "");
-        return {
-          id: String(item.message_id),
-          sender: senderType === "human" ? "YOU" : senderType === "agent" ? (agentNames[senderId] ?? senderId) : "FEDERATION SYSTEM",
-          text: String(item.content ?? ""),
-          time: timeLabel(String(item.created_at ?? "")),
-          kind: senderType === "human" ? "user" : senderType === "agent" ? "agent" : "system",
-          status: String(item.status ?? "")
-        };
-      });
-      if (loaded.length) setMessages(loaded);
-    }).catch(() => undefined);
-
-    return () => { active = false; };
-  // The history load is intentionally keyed to the authenticated conversation.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, session?.access_token, conversationId, callApi]);
-
-  useEffect(() => {
-    if (!supabase || !session || !conversationId) return;
-    void supabase.realtime.setAuth(session.access_token);
-    const channel = supabase
-      .channel(`federation-${conversationId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "ai_federation_messages",
-          filter: `conversation_id=eq.${conversationId}`
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>;
-          const id = String(row.message_id ?? "");
-          if (!id) return;
-          const senderType = String(row.sender_type ?? "system");
-          const senderId = String(row.sender_id ?? "");
-          const nextMessage: Message = {
-            id,
-            sender: senderType === "human" ? "YOU" : senderType === "agent" ? (agentNames[senderId] ?? senderId) : "FEDERATION SYSTEM",
-            text: String(row.content ?? ""),
-            time: timeLabel(String(row.created_at ?? "")),
-            kind: senderType === "human" ? "user" : senderType === "agent" ? "agent" : "system",
-            status: String(row.status ?? "")
-          };
-          setMessages((current) => current.some((message) => message.id === id) ? current : [...current, nextMessage]);
-        }
-      )
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [supabase, session, conversationId]);
-
-  async function submitAuth(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!supabase) return;
-    setAuthError("");
-    setAuthMessage("");
-    setBusy(true);
-    try {
-      if (authMode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) throw error;
-        setAuthMessage("Berhasil masuk. Memeriksa akses Federation…");
-      } else {
-        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
-        if (error) throw error;
-        if (!data.session) {
-          setAuthMessage("Pendaftaran diterima. Periksa email untuk menyelesaikan verifikasi, kemudian masuk.");
-        } else {
-          setAuthMessage("Akun dibuat. Akses Federation menunggu provisioning administrator.");
-        }
-      }
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Autentikasi gagal.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function signOut() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    setConversationId(null);
-    window.localStorage.removeItem(STORAGE_KEY);
-    setMessages([]);
-  }
+  const selectedNames = useMemo(() => agents.filter(a => selected.includes(a.id)).map(a => a.name), [selected]);
 
   function toggleAgent(id: string) {
-    const agent = agents.find((item) => item.id === id);
-    if (!agent?.enabled) return;
-    setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    setSelected(current => current.includes(id) ? current.filter(x => x !== id) : [...current, id]);
   }
 
   async function sendMessage() {
     const text = draft.trim();
-    if (!text || busy || !session) return;
-    if (authorizationStatus !== "ready") {
-      setMessages((current) => [...current, {
-        id: crypto.randomUUID(),
-        sender: "FERGUSON · ACCESS CONTROL",
-        text: authorizationStatus === "pending"
-          ? "Akun ini belum mendapat principal dan scope chat:write pada FM-001 Development. Minta administrator memprovision akun Anda sebelum mengirim instruksi."
-          : "Otorisasi belum siap. Periksa koneksi Supabase dan FM-001 Gateway.",
-        time: timeLabel(),
-        kind: "system",
-        status: authorizationStatus
-      }]);
-      return;
-    }
-    if (mode === "direct" && selected.length !== 1) {
-      setMessages((current) => [...current, {
-        id: crypto.randomUUID(), sender: "FEDERATION SYSTEM",
-        text: "Mode Direct memerlukan tepat satu AI. Pilih satu anggota terlebih dahulu.",
-        time: timeLabel(), kind: "system"
-      }]);
-      return;
-    }
-    if (mode !== "direct" && selected.length < 2) {
-      setMessages((current) => [...current, {
-        id: crypto.randomUUID(), sender: "FEDERATION SYSTEM",
-        text: "Mode kolaborasi memerlukan minimal dua AI.",
-        time: timeLabel(), kind: "system"
-      }]);
-      return;
-    }
-
-    const clientMessageId = crypto.randomUUID();
-    setMessages((current) => [...current, {
-      id: clientMessageId, sender: "YOU", text, time: timeLabel(), kind: "user"
-    }]);
+    if (!text || busy) return;
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      sender: "YOU",
+      text,
+      time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+      kind: "user"
+    };
+    setMessages(current => [...current, userMessage]);
     setDraft("");
     setBusy(true);
-    setWorkspaceStatus("Menjalankan orchestration…");
-
     try {
-      const { response, data } = await callApi({
-        action: "chat",
-        clientMessageId,
-        message: text,
-        mode,
-        agentIds: selected,
-        ...(conversationId ? { conversationId } : {})
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: text, mode, agentIds: selected })
       });
-      if (data.conversationId && typeof data.conversationId === "string") {
-        setConversationId(data.conversationId);
-      }
-      if (response.status === 403 || data.status === "authorization_pending") {
-        setAuthorizationStatus("pending");
-        setWorkspaceStatus("Menunggu provisioning administrator");
-      }
-      if (!response.ok) {
-        const missing = Array.isArray(data.missingAgents) ? ` Belum dikonfigurasi: ${data.missingAgents.join(", ")}.` : "";
-        setMessages((current) => [...current, {
-          id: crypto.randomUUID(),
-          sender: "FEDERATION ORCHESTRATOR",
-          text: String(data.error ?? data.message ?? "Permintaan tidak dapat diproses.") + missing,
-          time: timeLabel(),
-          kind: "system",
-          status: String(data.status ?? response.status)
-        }]);
-        return;
-      }
-
-      const results = Array.isArray(data.results) ? data.results : [];
-      const additions: Message[] = results.map((result: Record<string, unknown>) => ({
-        id: String(result.messageId ?? crypto.randomUUID()),
-        sender: String(result.name ?? result.agentId ?? "AI Agent"),
-        text: String(result.content ?? result.error ?? "Tidak ada output."),
-        time: timeLabel(),
-        kind: result.status === "succeeded" ? "agent" : "system",
-        status: String(result.status ?? "")
-      }));
-      setMessages((current) => {
-        const existing = new Set(current.map((item) => item.id));
-        return [...current, ...additions.filter((item) => !existing.has(item.id))];
-      });
-      setWorkspaceStatus(data.status === "succeeded" ? "Run selesai" : `Run selesai · ${data.status}`);
-    } catch (error) {
-      setMessages((current) => [...current, {
+      const data = await response.json() as { status?: string; message?: string; runId?: string };
+      setMessages(current => [...current, {
         id: crypto.randomUUID(),
         sender: "FEDERATION ORCHESTRATOR",
-        text: error instanceof Error ? error.message : "Tidak dapat menghubungi layanan Federation.",
-        time: timeLabel(),
+        text: data.message ?? "Orchestrator tidak mengembalikan pesan yang dapat dibaca.",
+        time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+        kind: "system",
+        status: data.status
+      }]);
+    } catch {
+      setMessages(current => [...current, {
+        id: crypto.randomUUID(),
+        sender: "FEDERATION ORCHESTRATOR",
+        text: "Tidak dapat menghubungi API aplikasi. Periksa server dan konfigurasi lokal.",
+        time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
         kind: "system",
         status: "unavailable"
       }]);
-      setWorkspaceStatus("Layanan tidak tersedia");
     } finally {
       setBusy(false);
     }
-  }
-
-  if (!supabase) {
-    return (
-      <main className="auth-shell">
-        <section className="auth-card">
-          <div className="brand"><div className="brand-mark">E</div><div><div className="brand-name">ERAMARINDO</div><span className="brand-sub">AI FEDERATION</span></div></div>
-          <div className="eyebrow">Environment configuration required</div>
-          <h1>Supabase belum dikonfigurasi</h1>
-          <p className="subtitle">Tambahkan NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY pada environment aplikasi. Jangan menaruh secret key atau provider API key di browser.</p>
-        </section>
-      </main>
-    );
-  }
-
-  if (authLoading) {
-    return <main className="auth-shell"><section className="auth-card"><div className="eyebrow">ERAMARINDO AI FEDERATION</div><h1>Memeriksa sesi…</h1></section></main>;
-  }
-
-  if (!session) {
-    return (
-      <main className="auth-shell">
-        <section className="auth-card">
-          <div className="brand"><div className="brand-mark">E</div><div><div className="brand-name">ERAMARINDO</div><span className="brand-sub">AI FEDERATION</span></div></div>
-          <div className="eyebrow">Secure development workspace</div>
-          <h1>{authMode === "login" ? "Masuk ke Federation" : "Daftarkan akun"}</h1>
-          <p className="subtitle">Gunakan akun Supabase Auth Eramarindo Development. Akses chat memerlukan provisioning principal dan scope FM-001.</p>
-          <form className="auth-form" onSubmit={submitAuth}>
-            <label>Email</label>
-            <input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nama@perusahaan.com" />
-            <label>Password</label>
-            <input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimal 8 karakter" />
-            {authError && <p className="auth-error">{authError}</p>}
-            {authMessage && <p className="auth-message">{authMessage}</p>}
-            <button className="primary-btn auth-submit" type="submit" disabled={busy}>{busy ? "Memproses…" : authMode === "login" ? "Masuk" : "Buat akun"}</button>
-          </form>
-          <button className="link-button" onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthError(""); setAuthMessage(""); }}>
-            {authMode === "login" ? "Belum memiliki akun? Daftar" : "Sudah memiliki akun? Masuk"}
-          </button>
-          <div className="auth-footnote">ONE GATE — ONE STANDARD — ONE COMMAND</div>
-        </section>
-      </main>
-    );
   }
 
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">E</div><div><div className="brand-name">ERAMARINDO</div><span className="brand-sub">AI FEDERATION</span></div></div>
+        <div className="brand">
+          <div className="brand-mark">E</div>
+          <div><div className="brand-name">ERAMARINDO</div><span className="brand-sub">AI FEDERATION</span></div>
+        </div>
         <div>
           <div className="nav-label">Workspace</div>
           <button className="nav-item active">◈ &nbsp; Federation General Room</button>
-          <button className="nav-item" disabled>▤ &nbsp; Knowledge Base · next phase</button>
-          <button className="nav-item" disabled>◎ &nbsp; Agent Registry · next phase</button>
-          <button className="nav-item" disabled>⌁ &nbsp; Runs & Audit · next phase</button>
+          <button className="nav-item" disabled>▤ &nbsp; Knowledge Base · planned</button>
+          <button className="nav-item" disabled>◎ &nbsp; Agent Registry · planned</button>
+          <button className="nav-item" disabled>⌁ &nbsp; Runs & Audit · planned</button>
         </div>
         <div>
           <div className="nav-label">Governance</div>
-          <button className="nav-item" disabled>⚙ &nbsp; Settings · next phase</button>
-          <button className="nav-item" disabled>◷ &nbsp; Usage & Budget · next phase</button>
+          <button className="nav-item" disabled>⚙ &nbsp; Settings · planned</button>
+          <button className="nav-item" disabled>◷ &nbsp; Usage & Budget · planned</button>
         </div>
         <div className="sidebar-bottom">
-          <div style={{fontSize:11, marginBottom:7}}><span className="pulse"/><b>{authorizationStatus === "ready" ? "FM-001 authorized" : authorizationStatus === "pending" ? "Provisioning pending" : "Checking access"}</b></div>
-          <div className="notice">{workspaceStatus}</div>
+          <div style={{fontSize:11, marginBottom:7}}><span className="pulse"/><b>Foundation mode</b></div>
+          <div className="notice">Provider connections are not configured. No external AI calls are being made.</div>
         </div>
       </aside>
 
       <main className="main">
         <header className="topbar">
           <div><div className="eyebrow">One Gate · One Standard · One Command</div><div className="top-title">Central Collaboration Workspace</div></div>
-          <div className="top-right"><span>{session.user.email}</span><button className="signout-btn" onClick={() => void signOut()}>Keluar</button><div className="avatar">FM</div></div>
+          <div className="top-right"><span>Environment: Bootstrap</span><div className="avatar">FM</div></div>
         </header>
 
         <section className="content">
           <div className="hero">
-            <div><div className="eyebrow">Collective intelligence platform</div><h1>AI Federation Command</h1><div className="subtitle">Satu ruang untuk mengarahkan, membandingkan, dan mengembangkan kolaborasi ChatGPT, Gemini, dan DeepSeek melalui FM-001.</div></div>
-            <div className="status-pill">{authorizationStatus === "ready" ? "● AUTHORIZED · DEVELOPMENT" : authorizationStatus === "pending" ? "● ACCESS PENDING" : "● CHECKING ACCESS"}</div>
+            <div><div className="eyebrow">Collective intelligence platform</div><h1>AI Federation Command</h1><div className="subtitle">Satu ruang untuk mengatur diskusi, mengarahkan tugas, dan mengembangkan kolaborasi lintas model AI dengan kendali manusia.</div></div>
+            <div className="status-pill">● &nbsp; BOOTSTRAP · NOT CONNECTED</div>
           </div>
 
           <div className="metrics">
-            <div className="card"><div className="metric-label">Initial AI members</div><div className="metric-value">03</div><div className="metric-note">OpenAI · Gemini · DeepSeek</div></div>
-            <div className="card"><div className="metric-label">Activated providers</div><div className="metric-value">{Object.values(providerStates).filter((item) => item.enabled).length.toString().padStart(2, "0")}</div><div className="metric-note">Secrets and model IDs required</div></div>
-            <div className="card"><div className="metric-label">Active conversation</div><div className="metric-value">{conversationId ? "01" : "00"}</div><div className="metric-note">{conversationId ? "Persisted in Development" : "Belum dimulai"}</div></div>
-            <div className="card"><div className="metric-label">Workspace access</div><div className="metric-value" style={{fontSize:18}}>{authorizationStatus === "ready" ? "READY" : authorizationStatus === "pending" ? "PENDING" : "CHECK"}</div><div className="metric-note">FM-001 scope enforcement</div></div>
+            <div className="card"><div className="metric-label">Registered agent candidates</div><div className="metric-value">06</div><div className="metric-note">Registry placeholders</div></div>
+            <div className="card"><div className="metric-label">Connected providers</div><div className="metric-value">00</div><div className="metric-note">API setup required</div></div>
+            <div className="card"><div className="metric-label">Active orchestration runs</div><div className="metric-value">00</div><div className="metric-note">No live runs</div></div>
+            <div className="card"><div className="metric-label">Shared knowledge records</div><div className="metric-value">00</div><div className="metric-note">Knowledge workflow planned</div></div>
           </div>
 
           <div className="workspace">
             <section className="chat-card">
-              <div className="chat-head"><div><div className="chat-title">Federation General Room</div><div className="chat-meta">Authenticated room · {selectedNames.length} selected AI agents</div></div><span className="status-pill">{busy ? "RUNNING" : "DEVELOPMENT"}</span></div>
+              <div className="chat-head"><div><div className="chat-title">Federation General Room</div><div className="chat-meta">Internal workspace · {selectedNames.length} selected agent candidates</div></div><span className="status-pill">DEMO SHELL</span></div>
               <div className="messages">
-                {messages.map((message) => <div className={`message ${message.kind === "user" ? "user" : ""}`} key={message.id}>
-                  <div className="msg-avatar">{message.kind === "user" ? "YOU" : message.kind === "agent" ? "AI" : "SYS"}</div>
+                {messages.map(message => <div className={`message ${message.kind === "user" ? "user" : ""}`} key={message.id}>
+                  <div className="msg-avatar">{message.kind === "user" ? "YOU" : "AI"}</div>
                   <div className="bubble"><div className="msg-name">{message.sender}</div><div className="msg-text">{message.text}</div><div className="msg-time">{message.time}{message.status ? ` · ${message.status}` : ""}</div></div>
                 </div>)}
-                {busy && <div className="message"><div className="msg-avatar">AI</div><div className="bubble"><div className="msg-name">FEDERATION ORCHESTRATOR</div><div className="msg-text">Menghubungi provider dan mengumpulkan respons…</div></div></div>}
+                {busy && <div className="message"><div className="msg-avatar">AI</div><div className="bubble"><div className="msg-name">FEDERATION ORCHESTRATOR</div><div className="msg-text">Memproses permintaan aplikasi…</div></div></div>}
               </div>
               <div className="composer">
-                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder="Tulis instruksi atau topik untuk rekan AI… (Enter untuk kirim, Shift+Enter untuk baris baru)" />
+                <textarea value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} placeholder="Tulis instruksi, agenda, atau pertanyaan untuk Federation… (Enter untuk kirim)" />
                 <div className="compose-row">
-                  <select className="select" value={mode} onChange={(event) => setMode(event.target.value as Mode)}>
-                    <option value="direct">Direct · 1 AI</option>
-                    <option value="broadcast">Broadcast · paralel</option>
-                    <option value="sequential_review">Sequential review · berantai</option>
+                  <select className="select" value={mode} onChange={e => setMode(e.target.value as Mode)}>
+                    <option value="direct">Direct message</option>
+                    <option value="broadcast">Broadcast to selected</option>
+                    <option value="sequential_review">Sequential review</option>
                   </select>
-                  <button className="primary-btn" onClick={() => void sendMessage()} disabled={!draft.trim() || busy || authorizationStatus !== "ready"}>Kirim ke Federation ↗</button>
+                  <button className="primary-btn" onClick={() => void sendMessage()} disabled={!draft.trim() || busy}>Send to orchestrator ↗</button>
                 </div>
-                {authorizationStatus === "pending" && <p className="notice">Akun sudah masuk, tetapi principal dan scope FM-001 belum diberikan oleh administrator. Chat belum diaktifkan.</p>}
               </div>
             </section>
 
             <aside className="side-panel">
               <div className="card">
-                <div className="chat-title">AI Federation members</div><div className="chat-meta">Pilih model yang menerima instruksi</div>
-                <div className="agent-list">{agents.map((agent) => {
-                  const status = providerStates[agent.id];
-                  return <label className="agent-row" key={agent.id} style={{cursor: agent.enabled ? "pointer" : "not-allowed", opacity: agent.enabled ? 1 : 0.48}}>
-                    <input type="checkbox" disabled={!agent.enabled} checked={selected.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
-                    <div className="agent-icon">{agent.initials}</div><div><div className="agent-name">{agent.name}</div><div className="agent-role">{agent.role}</div></div>
-                    <span className="agent-state">{!agent.enabled ? "LATER" : status?.enabled ? "READY" : status?.configured ? "ACTIVATE" : "SETUP"}</span>
-                  </label>;
-                })}</div>
+                <div className="chat-title">Agent candidates</div><div className="chat-meta">Pilih tujuan untuk run berikutnya</div>
+                <div className="agent-list">{agents.map(agent => <label className="agent-row" key={agent.id} style={{cursor:"pointer"}}>
+                  <input type="checkbox" checked={selected.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
+                  <div className="agent-icon">{agent.initials}</div><div><div className="agent-name">{agent.name}</div><div className="agent-role">{agent.role}</div></div>
+                  <span className="agent-state">SETUP</span>
+                </label>)}</div>
               </div>
               <div className="card">
                 <div className="chat-title">Connection readiness</div>
-                <div className="field"><label>FM-001 authorization</label><input readOnly value={authorizationStatus === "ready" ? "Authorized" : authorizationStatus === "pending" ? "Principal pending" : "Checking / unavailable"} /></div>
-                <div className="field"><label>Supabase Realtime</label><input readOnly value={conversationId ? "Subscribed to active room" : "Waiting for conversation"} /></div>
-                <div className="field"><label>Provider configuration</label><input readOnly value={Object.values(providerStates).filter((item) => item.enabled).length + " / 3 active"} /></div>
-                <p className="notice">Provider keys remain in Supabase Edge Function Secrets. Do not paste credentials into the workspace, browser, or GitHub.</p>
+                <div className="field"><label>Provider status</label><input readOnly value="Not configured" /></div>
+                <div className="field"><label>Realtime workspace</label><input readOnly value="Not configured" /></div>
+                <div className="field"><label>Database</label><input readOnly value="Not configured" /></div>
+                <p className="notice">API keys must be added to a secure server-side environment. Do not paste credentials into this chat or commit them to GitHub.</p>
               </div>
             </aside>
           </div>
         </section>
-        <footer className="footer">ERAMARINDO AI FEDERATION · HUMAN-GOVERNED MULTI-MODEL COLLABORATION · DEVELOPMENT v0.2</footer>
+        <footer className="footer">ERAMARINDO AI FEDERATION · HUMAN-GOVERNED MULTI-MODEL COLLABORATION · v0.1 FOUNDATION</footer>
       </main>
     </div>
   );

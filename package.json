@@ -1,6 +1,6 @@
 {
   "name": "eramarindo-ai-federation",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Human-governed multi-provider AI federation workspace and orchestrator",
   "scripts": {
@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.57.0",
     "next": "^15.5.0",
     "react": "^19.1.0",
@@ -19,7 +20,6 @@
     "zod": "^4.1.5"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.1",
     "@types/node": "^22.18.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
