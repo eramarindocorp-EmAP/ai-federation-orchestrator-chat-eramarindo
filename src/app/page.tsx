@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { validatePasswordChange } from "@/lib/auth/password-validation";
 
 type Mode = "direct" | "broadcast" | "sequential_review";
 type Message = {
@@ -293,7 +294,6 @@ export default function Home() {
     setAuthMessage("");
     setBusy(true);
     try {
-      const { validatePasswordChange } = await import("@/lib/auth/password-validation");
       const validationError = validatePasswordChange(password, passwordConfirmation);
       if (validationError) throw new Error(validationError);
 
