@@ -37,9 +37,11 @@ export default function Home() {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authMode, setAuthMode] = useState<"login" | "signup" | "forgot" | "reset">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [passwordResetComplete, setPasswordResetComplete] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [authError, setAuthError] = useState("");
   const [messages, setMessages] = useState<Message[]>([
@@ -76,12 +78,37 @@ export default function Home() {
       if (active) {
         setSession(data.session);
         setAuthLoading(false);
+
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("auth") === "recovery") {
+          if (data.session) {
+            setAuthMode("reset");
+            setEmail(data.session.user.email ?? "");
+          } else {
+            setAuthError("Tautan pemulihan tidak valid atau sudah kedaluwarsa. Minta tautan pemulihan yang baru.");
+          }
+        }
       }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthMode("reset");
+        setPassword("");
+        setPasswordConfirmation("");
+        setPasswordResetComplete(false);
+        setEmail(nextSession?.user.email ?? "");
+        setAuthError("");
+        setAuthMessage("Tautan pemulihan terverifikasi. Silakan buat password baru.");
+        return;
+      }
+
       setAuthError("");
-      setAuthMessage("");
+      if (event === "SIGNED_OUT") {
+        setAuthMode("login");
+        setPasswordResetComplete(false);
+      }
     });
     return () => {
       active = false;
@@ -234,6 +261,59 @@ export default function Home() {
     }
   }
 
+  async function requestPasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) return;
+
+    setAuthError("");
+    setAuthMessage("");
+    setBusy(true);
+    try {
+      const redirectUrl = new URL("/", window.location.origin);
+      redirectUrl.searchParams.set("auth", "recovery");
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: redirectUrl.toString()
+      });
+      if (error) throw error;
+
+      // Keep the response generic so the screen does not disclose whether an email exists.
+      setAuthMessage("Jika alamat email tersebut terdaftar, tautan pemulihan telah dikirim. Periksa Inbox dan Spam.");
+    } catch {
+      setAuthError("Permintaan reset belum dapat diproses. Coba kembali beberapa saat lagi atau hubungi administrator.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updatePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) return;
+
+    setAuthError("");
+    setAuthMessage("");
+    setBusy(true);
+    try {
+      const { validatePasswordChange } = await import("@/lib/auth/password-validation");
+      const validationError = validatePasswordChange(password, passwordConfirmation);
+      if (validationError) throw new Error(validationError);
+
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+
+      setPassword("");
+      setPasswordConfirmation("");
+      setPasswordResetComplete(true);
+      setAuthMessage("Password berhasil diperbarui. Anda dapat melanjutkan ke Federation.");
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete("auth");
+      window.history.replaceState({}, document.title, `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Password belum dapat diperbarui. Periksa tautan pemulihan dan coba lagi.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function signOut() {
     if (!supabase) return;
     await supabase.auth.signOut();
@@ -375,25 +455,105 @@ export default function Home() {
     return <main className="auth-shell"><section className="auth-card"><div className="eyebrow">ERAMARINDO AI FEDERATION</div><h1>Memeriksa sesi…</h1></section></main>;
   }
 
+  if (session && authMode === "reset") {
+    return (
+      <main className="auth-shell">
+        <section className="auth-card">
+          <div className="brand"><div className="brand-mark">E</div><div><div className="brand-name">ERAMARINDO</div><span className="brand-sub">AI FEDERATION</span></div></div>
+          <div className="eyebrow">Secure account recovery</div>
+          <h1>{passwordResetComplete ? "Password berhasil diperbarui" : "Buat password baru"}</h1>
+          <p className="subtitle">
+            {passwordResetComplete
+              ? "Password akun Development Anda sudah diperbarui. Sesi pemulihan tetap aman dan Anda dapat melanjutkan."
+              : "Tautan pemulihan telah diverifikasi. Buat password baru yang kuat dan berbeda dari password sebelumnya."}
+          </p>
+          {!passwordResetComplete ? (
+            <form className="auth-form" onSubmit={updatePassword}>
+              <label>Password baru</label>
+              <input
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Minimal 12 karakter"
+              />
+              <label>Konfirmasi password baru</label>
+              <input
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                required
+                value={passwordConfirmation}
+                onChange={(event) => setPasswordConfirmation(event.target.value)}
+                placeholder="Ulangi password baru"
+              />
+              {authError && <p className="auth-error">{authError}</p>}
+              <button className="primary-btn auth-submit" type="submit" disabled={busy}>
+                {busy ? "Memperbarui…" : "Simpan password baru"}
+              </button>
+            </form>
+          ) : (
+            <>
+              {authMessage && <p className="auth-message">{authMessage}</p>}
+              <button
+                className="primary-btn auth-submit"
+                type="button"
+                onClick={() => {
+                  setAuthMode("login");
+                  setPasswordResetComplete(false);
+                  setAuthMessage("");
+                }}
+              >
+                Lanjut ke Federation
+              </button>
+            </>
+          )}
+          <div className="auth-footnote">ONE GATE — ONE STANDARD — ONE COMMAND</div>
+        </section>
+      </main>
+    );
+  }
+
   if (!session) {
     return (
       <main className="auth-shell">
         <section className="auth-card">
           <div className="brand"><div className="brand-mark">E</div><div><div className="brand-name">ERAMARINDO</div><span className="brand-sub">AI FEDERATION</span></div></div>
           <div className="eyebrow">Secure development workspace</div>
-          <h1>{authMode === "login" ? "Masuk ke Federation" : "Daftarkan akun"}</h1>
-          <p className="subtitle">Gunakan akun Supabase Auth Eramarindo Development. Akses chat memerlukan provisioning principal dan scope FM-001.</p>
-          <form className="auth-form" onSubmit={submitAuth}>
+          <h1>{authMode === "login" ? "Masuk ke Federation" : authMode === "signup" ? "Daftarkan akun" : "Pulihkan password"}</h1>
+          <p className="subtitle">
+            {authMode === "forgot"
+              ? "Masukkan email akun Development. Jika alamat tersebut terdaftar, Supabase akan mengirim tautan untuk membuat password baru."
+              : "Gunakan akun Supabase Auth Eramarindo Development. Akses chat memerlukan provisioning principal dan scope FM-001."}
+          </p>
+          <form className="auth-form" onSubmit={authMode === "forgot" ? requestPasswordReset : submitAuth}>
             <label>Email</label>
             <input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nama@perusahaan.com" />
-            <label>Password</label>
-            <input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimal 8 karakter" />
+            {authMode !== "forgot" && (
+              <>
+                <label>Password</label>
+                <input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimal 8 karakter" />
+              </>
+            )}
             {authError && <p className="auth-error">{authError}</p>}
             {authMessage && <p className="auth-message">{authMessage}</p>}
-            <button className="primary-btn auth-submit" type="submit" disabled={busy}>{busy ? "Memproses…" : authMode === "login" ? "Masuk" : "Buat akun"}</button>
+            <button className="primary-btn auth-submit" type="submit" disabled={busy}>
+              {busy ? "Memproses…" : authMode === "login" ? "Masuk" : authMode === "signup" ? "Buat akun" : "Kirim tautan reset"}
+            </button>
           </form>
-          <button className="link-button" onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthError(""); setAuthMessage(""); }}>
-            {authMode === "login" ? "Belum memiliki akun? Daftar" : "Sudah memiliki akun? Masuk"}
+          {authMode === "login" && (
+            <button className="link-button" onClick={() => { setAuthMode("forgot"); setAuthError(""); setAuthMessage(""); }}>
+              Lupa password?
+            </button>
+          )}
+          <button className="link-button" onClick={() => {
+            setAuthMode(authMode === "forgot" ? "login" : authMode === "login" ? "signup" : "login");
+            setAuthError("");
+            setAuthMessage("");
+          }}>
+            {authMode === "login" ? "Belum memiliki akun? Daftar" : authMode === "signup" ? "Sudah memiliki akun? Masuk" : "Kembali ke Masuk"}
           </button>
           <div className="auth-footnote">ONE GATE — ONE STANDARD — ONE COMMAND</div>
         </section>
