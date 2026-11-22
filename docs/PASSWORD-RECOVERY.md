@@ -39,6 +39,8 @@ Do not use a wildcard for every `vercel.app` subdomain. Redirect destinations mu
 
 The recovery request depends on Supabase Auth email delivery and the project's **Recovery** email template. Before relying on the feature, verify that the Development project can deliver Auth emails to the operator mailbox. For regular operational use, configure an authorized SMTP provider in Supabase Auth settings and test delivery, spam placement, sender identity, and link expiry.
 
+The hosted project's built-in Supabase email service is restricted: it only delivers to email addresses belonging to the Supabase organization's team, and it has low project-wide rate limits with no delivery SLA. Before testing this feature with the operator mailbox, verify that the mailbox is an organization team member. Otherwise, configure a custom SMTP provider under **Authentication → SMTP Settings**. Keep SMTP credentials in Supabase Auth settings; never add them to the browser or Git repository. See https://supabase.com/docs/guides/auth/auth-smtp and https://supabase.com/docs/guides/auth/testing-auth-flows.
+
 ## Security boundaries
 
 - Recovery is handled by Supabase Auth; the app does not store password reset tokens.
