@@ -118,7 +118,7 @@ async function authorize(
   supabaseUrl: string,
   publishableKey: string,
   token: string,
-  requiredScope: "chat:read" | "chat:write"
+  requiredScope: "chat:read" | "chat:write" | "providers:activate"
 ) {
   const response = await fetch(`${supabaseUrl}/functions/v1/fm001-gateway`, {
     method: "POST",
@@ -379,11 +379,15 @@ Deno.serve(async (req: Request) => {
   }
 
   const action = body.action;
-  if (action !== "status" && action !== "history" && action !== "chat") {
-    return json(400, { status: "invalid_action", error: "Supported actions are status, history, and chat." }, cors);
+  if (action !== "status" && action !== "history" && action !== "chat" && action !== "provider_test") {
+    return json(400, { status: "invalid_action", error: "Supported actions are status, history, chat, and provider_test." }, cors);
   }
 
-  const requiredScope = action === "chat" ? "chat:write" : "chat:read";
+  const requiredScope = action === "chat"
+    ? "chat:write"
+    : action === "provider_test"
+      ? "providers:activate"
+      : "chat:read";
   let user: { id: string } | null;
   try { user = await getUser(supabaseUrl, publishableKey, match[1]); } catch {
     return json(503, { status: "identity_service_unavailable" }, cors);
@@ -413,6 +417,99 @@ Deno.serve(async (req: Request) => {
       return { agentId, name: agent.name, provider: agent.provider, configured, registered, enabled: configured && registered };
     });
     return json(200, { status: "ready", environment: "development", providers }, cors);
+  }
+
+  if (action === "provider_test") {
+    const agentId = body.agentId;
+    if (!safeAgentId(agentId)) {
+      return json(400, { status: "invalid_agent", error: "Select one supported provider." }, cors);
+    }
+
+    const agent = AGENTS[agentId];
+    const endpointLabels: Record<AgentId, string> = {
+      "chatgpt-primary": "OpenAI Responses API",
+      "gemini-primary": "Google Gemini Interactions API",
+      "deepseek-primary": "DeepSeek Chat Completions API"
+    };
+    const startedAt = Date.now();
+
+    let handshake: Awaited<ReturnType<typeof invokeProvider>>;
+    try {
+      handshake = await invokeProvider(
+        agent.provider,
+        [{ role: "user", content: "This is a connection verification. Reply with exactly: ERAMARINDO_PROVIDER_HANDSHAKE_OK" }],
+        "You are performing a brief API connectivity check. Do not perform external actions. Reply with exactly the requested verification text."
+      );
+    } catch (error) {
+      const code = errorCode(error);
+      const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 502;
+      return json(status === 429 ? 429 : 502, {
+        status: "provider_test_failed",
+        agentId,
+        provider: agent.provider,
+        error: code
+      }, cors);
+    }
+
+    if (!handshake.content.trim()) {
+      return json(502, {
+        status: "provider_test_failed",
+        agentId,
+        provider: agent.provider,
+        error: "empty_output"
+      }, cors);
+    }
+
+    const handshakeAt = new Date().toISOString();
+    const agentFilter = `agents?agent_id=eq.${encodeURIComponent(agentId)}&environment=eq.development`;
+    const connectionFilter = `agent_connections?agent_id=eq.${encodeURIComponent(agentId)}&environment=eq.development&protocol=eq.rest&endpoint_label=eq.${encodeURIComponent(endpointLabels[agentId])}`;
+
+    try {
+      await updateRow(supabaseUrl, secretKey, agentFilter, {
+        status: "active",
+        updated_at: handshakeAt
+      });
+      await updateRow(supabaseUrl, secretKey, connectionFilter, {
+        status: "active",
+        last_handshake_at: handshakeAt,
+        updated_at: handshakeAt
+      });
+
+      const verifiedRegistry = await getRegistryStatus(supabaseUrl, secretKey);
+      const verified = verifiedRegistry.get(agentId);
+      if (!verified?.agentActive || !verified?.connectionActive) {
+        throw new Error("provider_registry_activation_not_confirmed");
+      }
+    } catch {
+      // Fail closed: never leave a partially activated provider after a failed registry write.
+      await Promise.allSettled([
+        updateRow(supabaseUrl, secretKey, agentFilter, {
+          status: "pending",
+          updated_at: new Date().toISOString()
+        }),
+        updateRow(supabaseUrl, secretKey, connectionFilter, {
+          status: "pending",
+          last_handshake_at: null,
+          updated_at: new Date().toISOString()
+        })
+      ]);
+      return json(503, {
+        status: "provider_activation_failed",
+        agentId,
+        provider: agent.provider,
+        error: "registry_update_not_confirmed"
+      }, cors);
+    }
+
+    return json(200, {
+      status: "provider_verified",
+      agentId,
+      provider: agent.provider,
+      model: handshake.model,
+      latencyMs: Date.now() - startedAt,
+      handshakeAt,
+      enabled: true
+    }, cors);
   }
 
   if (action === "history") {
