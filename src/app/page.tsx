@@ -61,6 +61,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({});
+  const [providerTestStates, setProviderTestStates] = useState<Record<string, { state: "testing" | "success" | "failed"; message: string }>>({});
+  const [providerTesting, setProviderTesting] = useState<string | null>(null);
   const [authorizationStatus, setAuthorizationStatus] = useState<"checking" | "ready" | "pending" | "unavailable">("checking");
   const [workspaceStatus, setWorkspaceStatus] = useState("Menunggu autentikasi");
 
@@ -316,6 +318,67 @@ export default function Home() {
       setAuthError(error instanceof Error ? error.message : "Password belum dapat diperbarui. Periksa tautan pemulihan dan coba lagi.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function testAndActivateProvider(agentId: string) {
+    if (!session || authorizationStatus !== "ready" || providerTesting) return;
+    const agent = agents.find((item) => item.id === agentId);
+    if (!agent?.enabled) return;
+
+    setProviderTesting(agentId);
+    setProviderTestStates((current) => ({
+      ...current,
+      [agentId]: { state: "testing", message: "Mengirim handshake ke provider…" }
+    }));
+
+    try {
+      const { response, data } = await callApi({ action: "provider_test", agentId });
+      if (!response.ok || data.status !== "provider_verified") {
+        const code = String(data.error ?? data.status ?? "provider_test_failed");
+        throw new Error(code);
+      }
+
+      setProviderTestStates((current) => ({
+        ...current,
+        [agentId]: {
+          state: "success",
+          message: `Handshake berhasil · ${String(data.model ?? "model terverifikasi")} · ${Number(data.latencyMs ?? 0)} ms · registry aktif.`
+        }
+      }));
+
+      // Re-read server state; the UI never activates a provider on its own.
+      const statusResult = await callApi({ action: "status" });
+      if (statusResult.response.ok && Array.isArray(statusResult.data.providers)) {
+        const next: Record<string, ProviderState> = {};
+        for (const item of statusResult.data.providers) {
+          next[item.agentId] = item as ProviderState;
+        }
+        setProviderStates(next);
+      }
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : "provider_test_failed";
+      const readable: Record<string, string> = {
+        invalid_api_key: "API Key ditolak provider. Periksa credential di Supabase Secrets.",
+        authentication_error: "Autentikasi provider gagal. Periksa API Key.",
+        model_not_found: "Model ID tidak dikenal atau tidak tersedia untuk akun API ini.",
+        unsupported_model: "Model tidak mendukung endpoint yang digunakan adapter.",
+        insufficient_quota: "Kuota atau billing provider tidak mencukupi.",
+        rate_limit_exceeded: "Provider membatasi permintaan. Tunggu lalu coba lagi.",
+        provider_timeout: "Provider tidak merespons dalam batas waktu.",
+        provider_not_configured: "API Key atau Model ID belum tersedia pada Edge Function.",
+        empty_output: "Provider menerima permintaan tetapi tidak mengembalikan jawaban.",
+        provider_request_failed: "Permintaan ke provider gagal. Periksa log Edge Function."
+      };
+      setProviderTestStates((current) => ({
+        ...current,
+        [agentId]: {
+          state: "failed",
+          message: readable[raw] ?? `Handshake gagal: ${raw}. Periksa model ID, credential, dan log provider.`
+        }
+      }));
+    } finally {
+      setProviderTesting(null);
     }
   }
 
@@ -637,11 +700,26 @@ export default function Home() {
                 <div className="chat-title">AI Federation members</div><div className="chat-meta">Pilih model yang menerima instruksi</div>
                 <div className="agent-list">{agents.map((agent) => {
                   const status = providerStates[agent.id];
-                  return <label className="agent-row" key={agent.id} style={{cursor: agent.enabled ? "pointer" : "not-allowed", opacity: agent.enabled ? 1 : 0.48}}>
-                    <input type="checkbox" disabled={!agent.enabled} checked={selected.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
-                    <div className="agent-icon">{agent.initials}</div><div><div className="agent-name">{agent.name}</div><div className="agent-role">{agent.role}</div></div>
-                    <span className="agent-state">{!agent.enabled ? "LATER" : status?.enabled ? "READY" : status?.configured ? "ACTIVATE" : "SETUP"}</span>
-                  </label>;
+                  const testState = providerTestStates[agent.id];
+                  return <div className="agent-item" key={agent.id} style={{opacity: agent.enabled ? 1 : 0.48}}>
+                    <div className="agent-row">
+                      <label className="agent-select" style={{cursor: agent.enabled ? "pointer" : "not-allowed"}}>
+                        <input type="checkbox" disabled={!agent.enabled || !status?.enabled} checked={selected.includes(agent.id)} onChange={() => toggleAgent(agent.id)} />
+                        <div className="agent-icon">{agent.initials}</div>
+                        <div><div className="agent-name">{agent.name}</div><div className="agent-role">{agent.role}</div></div>
+                      </label>
+                      <div className="agent-actions">
+                        <span className="agent-state">{!agent.enabled ? "LATER" : status?.enabled ? "READY" : status?.configured ? "PENDING TEST" : "SETUP"}</span>
+                        {agent.enabled && !status?.enabled && <button
+                          type="button"
+                          className="provider-test-btn"
+                          disabled={!status?.configured || authorizationStatus !== "ready" || providerTesting !== null}
+                          onClick={() => void testAndActivateProvider(agent.id)}
+                        >{providerTesting === agent.id ? "TESTING…" : "Uji & Aktifkan"}</button>}
+                      </div>
+                    </div>
+                    {testState && <div className={`provider-test-feedback ${testState.state}`} role="status">{testState.message}</div>}
+                  </div>;
                 })}</div>
               </div>
               <div className="card">
