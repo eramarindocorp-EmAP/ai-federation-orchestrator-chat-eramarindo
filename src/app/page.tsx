@@ -28,6 +28,7 @@ const agents = [
 
 const agentNames: Record<string, string> = Object.fromEntries(agents.map((agent) => [agent.id, agent.name]));
 const STORAGE_KEY = "eramarindo-ai-federation-active-conversation";
+const PASSWORD_RECOVERY_KEY = "eramarindo-ai-federation-password-recovery";
 
 function timeLabel(value?: string) {
   if (!value) return new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
@@ -82,10 +83,11 @@ export default function Home() {
 
         const params = new URLSearchParams(window.location.search);
         if (params.get("auth") === "recovery") {
-          if (data.session) {
+          const recoveryWasVerified = window.sessionStorage.getItem(PASSWORD_RECOVERY_KEY) === "1";
+          if (data.session && recoveryWasVerified) {
             setAuthMode("reset");
             setEmail(data.session.user.email ?? "");
-          } else {
+          } else if (!data.session) {
             setAuthError("Tautan pemulihan tidak valid atau sudah kedaluwarsa. Minta tautan pemulihan yang baru.");
           }
         }
@@ -95,6 +97,7 @@ export default function Home() {
       setSession(nextSession);
 
       if (event === "PASSWORD_RECOVERY") {
+        window.sessionStorage.setItem(PASSWORD_RECOVERY_KEY, "1");
         setAuthMode("reset");
         setPassword("");
         setPasswordConfirmation("");
@@ -105,8 +108,9 @@ export default function Home() {
         return;
       }
 
-      setAuthError("");
+      if (event !== "INITIAL_SESSION") setAuthError("");
       if (event === "SIGNED_OUT") {
+        window.sessionStorage.removeItem(PASSWORD_RECOVERY_KEY);
         setAuthMode("login");
         setPasswordResetComplete(false);
       }
@@ -303,6 +307,7 @@ export default function Home() {
       setPassword("");
       setPasswordConfirmation("");
       setPasswordResetComplete(true);
+      window.sessionStorage.removeItem(PASSWORD_RECOVERY_KEY);
       setAuthMessage("Password berhasil diperbarui. Anda dapat melanjutkan ke Federation.");
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.delete("auth");
