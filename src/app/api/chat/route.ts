@@ -6,6 +6,7 @@ export const maxDuration = 60;
 
 const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status") }),
+  z.object({ action: z.literal("provider_test"), agentId: z.enum(["chatgpt-primary", "gemini-primary", "deepseek-primary"]) }),
   z.object({ action: z.literal("history"), conversationId: z.string().uuid() }),
   z.object({
     action: z.literal("chat"),
