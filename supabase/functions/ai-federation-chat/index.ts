@@ -3,7 +3,7 @@
  // Human authorization is delegated to the existing FM-001 gateway.
  // Provider credentials remain in Supabase Function Secrets only.
 
-import { classifyFederationTask } from "../../../src/lib/federation/task-classifier.ts";
+import { classifyFederationTask } from "./_shared/task-classifier.ts";
 
 type Json = Record<string, unknown>;
 type ProviderId = "openai" | "gemini" | "deepseek";
