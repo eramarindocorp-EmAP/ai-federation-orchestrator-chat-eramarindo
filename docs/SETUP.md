@@ -46,6 +46,10 @@ Configure provider secrets in **Supabase Dashboard → Edge Functions → Secret
 
 Supabase Auth registration does not grant FM-001 privileges automatically. An administrator must create an active `federation.principals` record and a Development role binding with `chat:read` and `chat:write`. See `docs/FOUNDER-BOOTSTRAP.md`.
 
+## Account recovery
+
+The login page includes a **Lupa password?** flow. Configure the Development Site URL, Additional Redirect URLs, and Auth recovery email delivery as described in [docs/PASSWORD-RECOVERY.md](PASSWORD-RECOVERY.md). Password recovery does not provision or change FM-001 roles and scopes.
+
 ## Production gate
 
 Do not enable Production until:
